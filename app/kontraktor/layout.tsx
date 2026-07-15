@@ -7,6 +7,14 @@ import { usePathname, useRouter } from 'next/navigation';
 import api from '@/lib/axios';
 import { getStorageUrl } from '@/lib/url';
 
+type UserData = {
+  id_user?: number;
+  nama_lengkap?: string;
+  email?: string;
+  role?: string;
+  foto_profil?: string | null;
+};
+
 export default function KontraktorLayout({
   children,
 }: {
@@ -14,119 +22,176 @@ export default function KontraktorLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [sisaHari, setSisaHari] = useState<number | null>(null);
 
-  useEffect(() => {
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
-      router.push('/auth/login');
-      return;
-    }
-
-    const localData = localStorage.getItem('user');
-    if (localData) {
-      const parsed = JSON.parse(localData);
-      setUser(parsed);
-      hitungSisaHari(parsed);
-    }
-
-    // 2. FETCH DATA TERBARU DARI SERVER (Agar foto/nama selalu update)
-    // Ubah endpoint sesuai endpoint profile kontraktor Anda
-    api.get('/profile') 
-      .then(res => {
-        const newData = res.data.data || res.data;
-        
-        // Update State & LocalStorage
-        setUser(newData);
-        localStorage.setItem('user', JSON.stringify(newData));
-        hitungSisaHari(newData);
-      })
-      .catch(err => {
-        console.error("Gagal sync user:", err);
-        if (err.response?.status === 401) logout();
-      });
-
-  }, []); // Run sekali saat mount
-
-  const hitungSisaHari = (userData: any) => {
-    if (userData.vip_expired_at) {
-      const expired = new Date(userData.vip_expired_at);
-      const now = new Date();
-      const diffTime = expired.getTime() - now.getTime();
-      const diffDay = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      setSisaHari(diffDay);
-    }
-  };
+  const [user, setUser] = useState<UserData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const logout = () => {
-    localStorage.clear();
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('token');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user');
+
     alert('Anda berhasil logout');
-    router.push('/auth/login');
+    router.replace('/auth/login');
   };
 
-  // Helper untuk URL Foto Profil yang Aman
+  useEffect(() => {
+    const loadUser = async () => {
+      const token = localStorage.getItem('auth_token');
+
+      if (!token) {
+        router.replace('/auth/login');
+        return;
+      }
+
+      /*
+       * Tampilkan dahulu data yang tersimpan di localStorage
+       * agar halaman tidak menunggu terlalu lama.
+       */
+      const localData = localStorage.getItem('user');
+
+      if (localData) {
+        try {
+          const parsedUser: UserData = JSON.parse(localData);
+          setUser(parsedUser);
+        } catch (error) {
+          console.error('Data user di localStorage tidak valid:', error);
+          localStorage.removeItem('user');
+        }
+      }
+
+      /*
+       * Ambil data profil terbaru dari backend.
+       */
+      try {
+        const response = await api.get('/profile');
+        const newData: UserData =
+          response.data?.data ?? response.data;
+
+        /*
+         * Pastikan akun yang masuk adalah kontraktor.
+         */
+        if (
+          newData.role &&
+          newData.role.toLowerCase() !== 'kontraktor'
+        ) {
+          localStorage.clear();
+          router.replace('/auth/login');
+          return;
+        }
+
+        setUser(newData);
+        localStorage.setItem('user', JSON.stringify(newData));
+      } catch (error: any) {
+        console.error('Gagal mengambil profil kontraktor:', error);
+
+        if (error.response?.status === 401) {
+          localStorage.clear();
+          router.replace('/auth/login');
+          return;
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadUser();
+  }, [router]);
+
   const getAvatarUrl = () => {
-    if (!user?.foto_profil) return '/images/default-avatar.png'; // Pastikan file ini ada di public/images
-    
-    // Jika di database tersimpan sebagai URL lengkap (misal dari Google Auth atau full path)
-    if (user.foto_profil.startsWith('http')) return user.foto_profil;
-    
-    // Jika hanya filename (misal: avatars/foto.jpg)
-    return getStorageUrl(user?.foto_profil);
+    if (!user?.foto_profil) {
+      return '/images/default-avatar.png';
+    }
+
+    if (user.foto_profil.startsWith('http')) {
+      return user.foto_profil;
+    }
+
+    return getStorageUrl(user.foto_profil);
   };
 
-  // Cegah render jika user null (loading state sederhana)
-  if (!user) return null; 
+  if (isLoading && !user) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
+        Memuat data...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  const menuItems = [
+    {
+      label: 'Dashboard',
+      href: '/kontraktor/dashboard',
+    },
+    {
+      label: 'Proyek',
+      href: '/kontraktor/proyek',
+    },
+    {
+      label: 'Pekerjaan',
+      href: '/kontraktor/pekerjaan',
+    },
+    {
+      label: 'Pengeluaran',
+      href: '/kontraktor/pengeluaran',
+    },
+    {
+      label: 'Material',
+      href: '/kontraktor/material',
+    },
+    {
+      label: 'Laporan Keuangan',
+      href: '/kontraktor/laporan-keuangan',
+    },
+    {
+      label: 'Progres',
+      href: '/kontraktor/progres',
+    },
+  ];
 
   return (
     <>
       <header>
         <div className="header-content">
           <div className="header-left">
-            <img src="/images/logo.png" alt="Logo" className="logo" />
+            <img
+              src="/images/logo.png"
+              alt="Logo FinProjek"
+              className="logo"
+            />
+
             <span>FinProjek</span>
           </div>
 
           <div className="header-right">
-          {Number(user.is_premium) === 1 ? (
-              <>
-                {/* <div className="vip-badge">👑 VIP</div> */}
-              </>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                <button
-                  className="upgrade-btn"
-                  onClick={() => router.push('/kontraktor/upgrade')}
-                >
-                  Upgrade ke Premium
-                </button>
-
-                {sisaHari !== null && (
-                  <small style={{ fontSize: '12px', marginTop: '4px', opacity: 0.8 }}>
-                    {sisaHari > 0
-                      ? `Trial: sisa ${sisaHari} hari`
-                      : 'Trial sudah habis'}
-                  </small>
-                )}
-              </div>
-            )}
-
-        <button
-          className="logout-btn"
-          onClick={logout}
-          style={{
-            backgroundColor: '#dc2626',
-            color: '#ffffff',
-            border: 'none',
-            padding: '10px 18px',
-            borderRadius: '8px',
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          Logout
-        </button>
+            <button
+              type="button"
+              className="logout-btn"
+              onClick={logout}
+              style={{
+                backgroundColor: '#dc2626',
+                color: '#ffffff',
+                border: 'none',
+                padding: '10px 18px',
+                borderRadius: '8px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Logout
+            </button>
           </div>
         </div>
       </header>
@@ -137,17 +202,30 @@ export default function KontraktorLayout({
             className="sidebar-profile"
             onClick={() => router.push('/kontraktor/profile')}
             style={{ cursor: 'pointer' }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                router.push('/kontraktor/profile');
+              }
+            }}
           >
-            {/* GUNAKAN HELPER URL */}
             <img
               src={getAvatarUrl()}
-              alt="Foto Profil"
+              alt="Foto profil kontraktor"
               className="sidebar-avatar"
               style={{ objectFit: 'cover' }}
+              onError={(event) => {
+                event.currentTarget.src =
+                  '/images/default-avatar.png';
+              }}
             />
 
             <div className="sidebar-profile-info">
-              <strong>{user.nama_lengkap}</strong>
+              <strong>
+                {user.nama_lengkap || 'Kontraktor'}
+              </strong>
+
               <span>Kontraktor</span>
             </div>
           </div>
@@ -155,19 +233,22 @@ export default function KontraktorLayout({
           <hr className="sidebar-divider" />
 
           <ul className="sidebar-menu">
-            {[
-              ['Dashboard', '/kontraktor/dashboard'],
-              ['Proyek', '/kontraktor/proyek'],
-              ['Pekerjaan', '/kontraktor/pekerjaan'],
-              ['Pengeluaran', '/kontraktor/pengeluaran'],
-              ['Material', '/kontraktor/material'],
-              ['Laporan Keuangan', '/kontraktor/laporan-keuangan'],
-              ['Progres', '/kontraktor/progres'],
-            ].map(([label, href]) => (
-              <li key={href} className={pathname === href ? 'active' : ''}>
-                <Link href={href}>{label}</Link>
-              </li>
-            ))}
+            {menuItems.map((item) => {
+              const isActive =
+                pathname === item.href ||
+                pathname.startsWith(`${item.href}/`);
+
+              return (
+                <li
+                  key={item.href}
+                  className={isActive ? 'active' : ''}
+                >
+                  <Link href={item.href}>
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </aside>
 

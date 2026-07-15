@@ -1,0 +1,30 @@
+node_modules
+.next
+*.zip
+.env
+
+# Next.js
+node_modules/
+.next/
+out/
+
+# Environment frontend
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Laravel
+finprojek-backend2/vendor/
+finprojek-backend2/.env
+finprojek-backend2/storage/logs/*
+finprojek-backend2/bootstrap/cache/*.php
+
+# Sistem
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+.vercel/

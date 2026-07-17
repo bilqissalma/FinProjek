@@ -355,14 +355,20 @@ export default function TambahPengeluaranModal({
                     placeholder="0"
                     className="form-control"
                     style={fieldInputStyle}
-                    value={d.banyak}
-                    onChange={e =>
+                    value={d.banyak === 0 ? '' : d.banyak}
+                    onFocus={e => e.currentTarget.select()}
+                    onChange={e => {
+                      const value = e.target.value.replace(
+                        /^0+(?=\d)/,
+                        '',
+                      );
+
                       updateDetail(
                         i,
                         'banyak',
-                        Number(e.target.value),
-                      )
-                    }
+                        value === '' ? 0 : Number(value),
+                      );
+                    }}
                   />
                 </div>
 
@@ -377,14 +383,24 @@ export default function TambahPengeluaranModal({
                     placeholder="0"
                     className="form-control"
                     style={fieldInputStyle}
-                    value={d.harga_satuan}
-                    onChange={e =>
+                    value={
+                      d.harga_satuan === 0
+                        ? ''
+                        : d.harga_satuan
+                    }
+                    onFocus={e => e.currentTarget.select()}
+                    onChange={e => {
+                      const value = e.target.value.replace(
+                        /^0+(?=\d)/,
+                        '',
+                      );
+
                       updateDetail(
                         i,
                         'harga_satuan',
-                        Number(e.target.value),
-                      )
-                    }
+                        value === '' ? 0 : Number(value),
+                      );
+                    }}
                   />
                 </div>
 

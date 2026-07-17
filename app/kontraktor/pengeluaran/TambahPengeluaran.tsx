@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import api from '@/lib/axios';
 
 /* =========================
@@ -284,91 +285,268 @@ export default function TambahPengeluaranModal({
         </div>
 
         {/* --- DETAIL ITEM --- */}
-        {details?.map((d, i) => (
-          <div key={i} className="card" style={{ marginTop: 16, padding: 16, border: '1px solid #eee', borderRadius: 8 }}>
-            <h4 style={{marginTop:0}}>Material #{i + 1}</h4>
+        {details?.map((d, i) => {
+          const totalHarga =
+            Number(d.banyak || 0) * Number(d.harga_satuan || 0);
 
-            {/* Baris Input Item */}
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1.5fr', gap: 10, marginBottom: 16 }}>
-              <input 
-                placeholder="Nama Item" className="form-control" style={{padding:8}}
-                value={d.nama_item} 
-                onChange={e => updateDetail(i, 'nama_item', e.target.value)} 
-              />
-              <select 
-                className="form-control" style={{padding:8}}
-                value={d.satuan} 
-                onChange={e => updateDetail(i, 'satuan', e.target.value)}
+          return (
+            <div
+              key={i}
+              className="card"
+              style={{
+                marginTop: 16,
+                padding: 16,
+                border: '1px solid #e5e7eb',
+                borderRadius: 8,
+              }}
+            >
+              <h4 style={{ marginTop: 0, marginBottom: 16 }}>
+                {form.spesifikasi} #{i + 1}
+              </h4>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns:
+                    'repeat(auto-fit, minmax(150px, 1fr))',
+                  gap: 12,
+                  marginBottom: 16,
+                }}
               >
-                <option value="">Satuan</option>
-                {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <input 
-                type="number" placeholder="Qty" className="form-control" style={{padding:8}}
-                value={d.banyak} 
-                onChange={e => updateDetail(i, 'banyak', Number(e.target.value))} 
-              />
-              <input 
-                type="number" placeholder="Harga Satuan" className="form-control" style={{padding:8}}
-                value={d.harga_satuan} 
-                onChange={e => updateDetail(i, 'harga_satuan', Number(e.target.value))} 
-              />
-            </div>
+                <div>
+                  <label style={fieldLabelStyle}>Nama Item</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Semen Portland"
+                    className="form-control"
+                    style={fieldInputStyle}
+                    value={d.nama_item}
+                    onChange={e =>
+                      updateDetail(i, 'nama_item', e.target.value)
+                    }
+                  />
+                </div>
 
-            {/* --- DISTRIBUSI --- */}
-            <h5 style={{marginBottom:8}}>Distribusi Biaya</h5>
-            {d.distribusi?.map((r, idx) => (
-              <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 0.5fr', gap: 10, marginBottom: 8 }}>
-                
-                {/* PILIH PEKERJAAN */}
-                <select
-                  className="form-control" style={{padding:8}}
-                  value={r.id_pekerjaan}
-                  onChange={e => updateDistribusi(i, idx, 'id_pekerjaan', Number(e.target.value))}
-                  disabled={!form.id_proyek}
-                >
-                  <option value="">Pilih Pekerjaan</option>
-                  {filteredJobs?.map(j => (
-                    <option key={j.id_pekerjaan} value={j.id_pekerjaan}>{j.nama_pekerjaan}</option>
-                  ))}
-                </select>
+                <div>
+                  <label style={fieldLabelStyle}>Satuan</label>
+                  <select
+                    className="form-control"
+                    style={fieldInputStyle}
+                    value={d.satuan}
+                    onChange={e =>
+                      updateDetail(i, 'satuan', e.target.value)
+                    }
+                  >
+                    <option value="">Pilih Satuan</option>
+                    {SATUAN_OPTIONS.map(s => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                {/* PILIH SUB PEKERJAAN */}
-                <select
-                  className="form-control" style={{padding:8}}
-                  value={r.id_sub}
-                  onChange={e => updateDistribusi(i, idx, 'id_sub', Number(e.target.value))}
-                  disabled={!r.id_pekerjaan}
-                >
-                  <option value="">Pilih Sub Pekerjaan</option>
-                  {/* PANGGIL FUNGSI SAFE GET SUBS */}
-                  {getFilteredSubs(Number(r.id_pekerjaan)).map(s => (
-                    <option key={s.id_sub} value={s.id_sub}>{s.nama_sub}</option>
-                  ))}
-                </select>
+                <div>
+                  <label style={fieldLabelStyle}>Jumlah</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0"
+                    className="form-control"
+                    style={fieldInputStyle}
+                    value={d.banyak}
+                    onChange={e =>
+                      updateDetail(
+                        i,
+                        'banyak',
+                        Number(e.target.value),
+                      )
+                    }
+                  />
+                </div>
 
-                <div style={{display:'flex', alignItems:'center'}}>
-                   <input
-                    type="number" className="form-control" style={{padding:8, width:60}}
-                    value={r.rasio_penggunaan}
-                    onChange={e => updateDistribusi(i, idx, 'rasio_penggunaan', Number(e.target.value))}
-                    onBlur={() => addDistribusiIfNeeded(i)}
-                   />
-                   <span style={{marginLeft:5}}>%</span>
+                <div>
+                  <label style={fieldLabelStyle}>
+                    Harga Satuan (Rp)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="0"
+                    className="form-control"
+                    style={fieldInputStyle}
+                    value={d.harga_satuan}
+                    onChange={e =>
+                      updateDetail(
+                        i,
+                        'harga_satuan',
+                        Number(e.target.value),
+                      )
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label style={fieldLabelStyle}>
+                    Total Harga (Rp)
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    style={{
+                      ...fieldInputStyle,
+                      backgroundColor: '#f3f4f6',
+                      fontWeight: 600,
+                    }}
+                    value={totalHarga.toLocaleString('id-ID')}
+                    readOnly
+                  />
                 </div>
               </div>
-            ))}
 
-            <label style={{display:'flex', alignItems:'center', marginTop:10, fontSize:'0.9rem'}}>
-              <input 
-                type="checkbox" style={{marginRight:8}}
-                checked={d.allow_partial} 
-                onChange={e => updateDetail(i, 'allow_partial', e.target.checked)} 
-              />
-              Simpan sementara (Rasio {'<'} 100%)
-            </label>
-          </div>
-        ))}
+              <h5 style={{ marginBottom: 10 }}>
+                Distribusi Biaya
+              </h5>
+
+              {d.distribusi?.map((r, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(auto-fit, minmax(170px, 1fr))',
+                    gap: 12,
+                    marginBottom: 12,
+                    padding: 12,
+                    backgroundColor: '#f9fafb',
+                    borderRadius: 8,
+                  }}
+                >
+                  <div>
+                    <label style={fieldLabelStyle}>
+                      Pekerjaan
+                    </label>
+                    <select
+                      className="form-control"
+                      style={fieldInputStyle}
+                      value={r.id_pekerjaan}
+                      onChange={e =>
+                        updateDistribusi(
+                          i,
+                          idx,
+                          'id_pekerjaan',
+                          e.target.value
+                            ? Number(e.target.value)
+                            : '',
+                        )
+                      }
+                      disabled={!form.id_proyek}
+                    >
+                      <option value="">
+                        Pilih Pekerjaan
+                      </option>
+                      {filteredJobs?.map(j => (
+                        <option
+                          key={j.id_pekerjaan}
+                          value={j.id_pekerjaan}
+                        >
+                          {j.nama_pekerjaan}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={fieldLabelStyle}>
+                      Sub Pekerjaan
+                    </label>
+                    <select
+                      className="form-control"
+                      style={fieldInputStyle}
+                      value={r.id_sub}
+                      onChange={e =>
+                        updateDistribusi(
+                          i,
+                          idx,
+                          'id_sub',
+                          e.target.value
+                            ? Number(e.target.value)
+                            : '',
+                        )
+                      }
+                      disabled={!r.id_pekerjaan}
+                    >
+                      <option value="">
+                        Pilih Sub Pekerjaan
+                      </option>
+                      {getFilteredSubs(
+                        Number(r.id_pekerjaan),
+                      ).map(s => (
+                        <option
+                          key={s.id_sub}
+                          value={s.id_sub}
+                        >
+                          {s.nama_sub}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={fieldLabelStyle}>
+                      Rasio Penggunaan (%)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      className="form-control"
+                      style={fieldInputStyle}
+                      value={r.rasio_penggunaan}
+                      onChange={e =>
+                        updateDistribusi(
+                          i,
+                          idx,
+                          'rasio_penggunaan',
+                          Number(e.target.value),
+                        )
+                      }
+                      onBlur={() =>
+                        addDistribusiIfNeeded(i)
+                      }
+                    />
+                  </div>
+                </div>
+              ))}
+
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  marginTop: 10,
+                  fontSize: '0.9rem',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  style={{ marginRight: 8 }}
+                  checked={d.allow_partial}
+                  onChange={e =>
+                    updateDetail(
+                      i,
+                      'allow_partial',
+                      e.target.checked,
+                    )
+                  }
+                />
+                Simpan sementara jika total rasio belum 100%
+              </label>
+            </div>
+          );
+        })}
 
         <div style={{marginTop:20}}>
             <button onClick={addDetail} className="btn" style={{padding:'8px 16px', border:'1px solid #ccc', borderRadius:4, cursor:'pointer'}}>+ Tambah Item</button>
@@ -384,3 +562,20 @@ export default function TambahPengeluaranModal({
     </div>
   );
 }
+
+
+const fieldLabelStyle: CSSProperties = {
+  display: 'block',
+  marginBottom: 6,
+  fontSize: 13,
+  fontWeight: 600,
+  color: '#374151',
+};
+
+const fieldInputStyle: CSSProperties = {
+  width: '100%',
+  padding: 9,
+  border: '1px solid #d1d5db',
+  borderRadius: 6,
+  boxSizing: 'border-box',
+};

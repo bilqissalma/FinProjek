@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\Kontraktor\MaterialController;
 use App\Http\Controllers\Api\Kontraktor\LaporanKeuanganController;
 use App\Http\Controllers\Api\Kontraktor\ProfileController;
 use App\Http\Controllers\Api\Kontraktor\ProgresController;
+use App\Http\Controllers\Api\Kontraktor\DropdownController;
 
 use App\Http\Controllers\Api\Pemilik\DashboardController as PemilikDashboard;
 use App\Http\Controllers\Api\Pemilik\ProyekController as PemilikProyek;
@@ -78,15 +79,15 @@ Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
         Route::put('/admins/{id}', [AdminController::class, 'update']);    // <-- hapus 'admin' dobel
         Route::delete('/admins/{id}', [AdminController::class, 'destroy']);
     });
-    
 
 
 
-    
+
+
 
     Route::middleware('auth:api')->group(function () {
         Route::post('/payment/mark-vip', [PaymentController::class, 'markVip']);
-        
+
         // PROYEK
         Route::get('/proyek', [ProyekController::class, 'index']);
         Route::post('/proyek', [ProyekController::class, 'store']);
@@ -94,7 +95,7 @@ Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
         Route::get('/proyek/{id}', [ProyekController::class, 'show']);
         Route::put('/proyek/{id}', [ProyekController::class, 'update']);
 
-    
+
         // PEKERJAAN
         Route::get('/pekerjaan', [PekerjaanController::class, 'index']);
         Route::post('/pekerjaan', [PekerjaanController::class, 'store']);
@@ -178,3 +179,18 @@ Route::get('/test-payment', function () {
         ? 'CONTROLLER OK'
         : 'CONTROLLER NOT FOUND';
 });
+
+Route::get(
+    '/dropdown/proyek',
+    [DropdownController::class, 'proyek']
+);
+
+Route::get(
+    '/dropdown/pekerjaan/{idProyek}',
+    [DropdownController::class, 'pekerjaan']
+);
+
+Route::get(
+    '/dropdown/sub/{idPekerjaan}',
+    [DropdownController::class, 'sub']
+);

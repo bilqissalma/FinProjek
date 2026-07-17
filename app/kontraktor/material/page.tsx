@@ -33,27 +33,17 @@ type MaterialRow = {
   biaya_pakai?: number | string;
 };
 
-type ProyekOption = {
-  id_proyek: number | string;
-  nama_proyek: string;
-};
-
-type PekerjaanOption = {
-  id_pekerjaan: number | string;
-  nama_pekerjaan: string;
-};
-
-type SubOption = {
-  id_sub: number | string;
-  nama_sub: string;
-};
-
 type FilterState = {
   id_proyek: string;
   id_pekerjaan: string;
   id_sub: string;
   start: string;
   end: string;
+};
+
+type SelectOption = {
+  value: string;
+  label: string;
 };
 
 const emptyFilter: FilterState = {
@@ -64,12 +54,6 @@ const emptyFilter: FilterState = {
   end: '',
 };
 
-/**
- * Menangani beberapa kemungkinan format respons API:
- * 1. [...]
- * 2. { data: [...] }
- * 3. { material: [...] }
- */
 const normalizeList = <T,>(payload: any): T[] => {
   if (Array.isArray(payload)) {
     return payload;
@@ -81,6 +65,10 @@ const normalizeList = <T,>(payload: any): T[] => {
 
   if (Array.isArray(payload?.material)) {
     return payload.material;
+  }
+
+  if (Array.isArray(payload?.pengeluaran)) {
+    return payload.pengeluaran;
   }
 
   return [];
@@ -97,7 +85,7 @@ const formatRupiah = (value: unknown) =>
 const formatTanggal = (value?: string) => {
   if (!value) return '-';
 
-  const tanggal = value.slice(0, 10);
+  const tanggal = String(value).slice(0, 10);
   const [tahun, bulan, hari] = tanggal.split('-');
 
   if (!tahun || !bulan || !hari) {
@@ -107,107 +95,204 @@ const formatTanggal = (value?: string) => {
   return `${hari}/${bulan}/${tahun}`;
 };
 
+const createOptionValue = (
+  id: number | string | null | undefined,
+  name: string | null | undefined,
+) => {
+  if (id !== undefined && id !== null && String(id) !== '') {
+    return String(id);
+  }
+
+  return `name:${normalizeText(name)}`;
+};
+
+const matchesOption = (
+  rowId: number | string | null | undefined,
+  rowName: string | null | undefined,
+  selectedValue: string,
+) => {
+  if (!selectedValue) {
+    return true;
+  }
+
+  if (selectedValue.startsWith('name:')) {
+    return (
+      `name:${normalizeText(rowName)}` === selectedValue
+    );
+  }
+
+  return String(rowId ?? '') === selectedValue;
+};
+
+const uniqueOptions = (
+  rows: MaterialRow[],
+  idGetter: (row: MaterialRow) => number | string | undefined,
+  nameGetter: (row: MaterialRow) => string | undefined,
+): SelectOption[] => {
+  const map = new Map<string, string>();
+
+  rows.forEach(row => {
+    const name = nameGetter(row);
+
+    if (!name) {
+      return;
+    }
+
+    const value = createOptionValue(idGetter(row), name);
+
+    if (!map.has(value)) {
+      map.set(value, name);
+    }
+  });
+
+  return Array.from(map.entries())
+    .map(([value, label]) => ({
+      value,
+      label,
+    }))
+    .sort((a, b) =>
+      a.label.localeCompare(b.label, 'id-ID'),
+    );
+};
+
 export default function MaterialPage() {
-  /*
-   * allRows menyimpan seluruh data dari API.
-   * rows yang ditampilkan diperoleh melalui proses filter di useMemo.
-   */
   const [allRows, setAllRows] = useState<MaterialRow[]>([]);
-
-  const [proyek, setProyek] = useState<ProyekOption[]>([]);
-  const [pekerjaan, setPekerjaan] = useState<PekerjaanOption[]>([]);
-  const [sub, setSub] = useState<SubOption[]>([]);
-
-  /*
-   * filter = nilai yang sedang dipilih pada form.
-   * appliedFilter = nilai yang sudah diterapkan melalui tombol Terapkan.
-   */
-  const [filter, setFilter] = useState<FilterState>(emptyFilter);
+  const [filter, setFilter] =
+    useState<FilterState>(emptyFilter);
   const [appliedFilter, setAppliedFilter] =
     useState<FilterState>(emptyFilter);
 
   const [loading, setLoading] = useState(true);
-  const [loadingPekerjaan, setLoadingPekerjaan] = useState(false);
-  const [loadingSub, setLoadingSub] = useState(false);
   const [error, setError] = useState('');
 
   /*
-   * Mengambil seluruh data material dan daftar proyek.
+   * Hanya mengambil data dari endpoint /material.
+   * Dropdown proyek, pekerjaan, dan subpekerjaan dibentuk
+   * langsung dari data material agar tidak bergantung pada
+   * endpoint /dropdown yang sebelumnya menghasilkan error 500.
    */
   useEffect(() => {
-    const loadInitialData = async () => {
+    let active = true;
+
+    const loadMaterial = async () => {
       setLoading(true);
       setError('');
 
       try {
-        const [materialResponse, proyekResponse] = await Promise.all([
-          api.get('/material'),
-          api.get('/dropdown/proyek'),
-        ]);
+        const response = await api.get('/material');
+        const materialRows =
+          normalizeList<MaterialRow>(response.data);
 
-        setAllRows(
-          normalizeList<MaterialRow>(materialResponse.data),
-        );
+        if (!active) {
+          return;
+        }
 
-        setProyek(
-          normalizeList<ProyekOption>(proyekResponse.data),
-        );
-      } catch (err) {
+        setAllRows(materialRows);
+      } catch (err: any) {
         console.error('Gagal mengambil data material:', err);
-        setError('Data material gagal dimuat.');
+
+        if (!active) {
+          return;
+        }
+
+        setAllRows([]);
+        setError(
+          err?.response?.data?.message ||
+            'Data material gagal dimuat.',
+        );
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
 
-    loadInitialData();
+    loadMaterial();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   /*
-   * Ketika proyek berubah:
-   * - reset pekerjaan
-   * - reset subpekerjaan
-   * - ambil pekerjaan berdasarkan proyek
+   * Pilihan proyek dibentuk dari seluruh data material.
    */
-  const handleProjectChange = async (idProyek: string) => {
+  const projectOptions = useMemo(
+    () =>
+      uniqueOptions(
+        allRows,
+        row => row.id_proyek,
+        row => row.nama_proyek,
+      ),
+    [allRows],
+  );
+
+  /*
+   * Pilihan pekerjaan hanya menampilkan pekerjaan
+   * dari proyek yang sedang dipilih.
+   */
+  const projectScopedRows = useMemo(() => {
+    if (!filter.id_proyek) {
+      return [];
+    }
+
+    return allRows.filter(row =>
+      matchesOption(
+        row.id_proyek,
+        row.nama_proyek,
+        filter.id_proyek,
+      ),
+    );
+  }, [allRows, filter.id_proyek]);
+
+  const pekerjaanOptions = useMemo(
+    () =>
+      uniqueOptions(
+        projectScopedRows,
+        row => row.id_pekerjaan,
+        row => row.nama_pekerjaan,
+      ),
+    [projectScopedRows],
+  );
+
+  /*
+   * Pilihan subpekerjaan hanya menampilkan subpekerjaan
+   * dari proyek dan pekerjaan yang sedang dipilih.
+   */
+  const pekerjaanScopedRows = useMemo(() => {
+    if (!filter.id_pekerjaan) {
+      return [];
+    }
+
+    return projectScopedRows.filter(row =>
+      matchesOption(
+        row.id_pekerjaan,
+        row.nama_pekerjaan,
+        filter.id_pekerjaan,
+      ),
+    );
+  }, [projectScopedRows, filter.id_pekerjaan]);
+
+  const subOptions = useMemo(
+    () =>
+      uniqueOptions(
+        pekerjaanScopedRows,
+        row => row.id_sub,
+        row => row.nama_sub,
+      ),
+    [pekerjaanScopedRows],
+  );
+
+  const handleProjectChange = (idProyek: string) => {
     setFilter(previous => ({
       ...previous,
       id_proyek: idProyek,
       id_pekerjaan: '',
       id_sub: '',
     }));
-
-    setPekerjaan([]);
-    setSub([]);
-
-    if (!idProyek) {
-      return;
-    }
-
-    setLoadingPekerjaan(true);
-
-    try {
-      const response = await api.get(
-        `/dropdown/pekerjaan/${idProyek}`,
-      );
-
-      setPekerjaan(
-        normalizeList<PekerjaanOption>(response.data),
-      );
-    } catch (err) {
-      console.error('Gagal mengambil pekerjaan:', err);
-      setPekerjaan([]);
-    } finally {
-      setLoadingPekerjaan(false);
-    }
   };
 
-  /*
-   * Ketika pekerjaan berubah:
-   * - reset subpekerjaan
-   * - ambil subpekerjaan berdasarkan pekerjaan
-   */
-  const handlePekerjaanChange = async (
+  const handlePekerjaanChange = (
     idPekerjaan: string,
   ) => {
     setFilter(previous => ({
@@ -215,110 +300,26 @@ export default function MaterialPage() {
       id_pekerjaan: idPekerjaan,
       id_sub: '',
     }));
-
-    setSub([]);
-
-    if (!idPekerjaan) {
-      return;
-    }
-
-    setLoadingSub(true);
-
-    try {
-      const response = await api.get(
-        `/dropdown/sub/${idPekerjaan}`,
-      );
-
-      setSub(normalizeList<SubOption>(response.data));
-    } catch (err) {
-      console.error('Gagal mengambil subpekerjaan:', err);
-      setSub([]);
-    } finally {
-      setLoadingSub(false);
-    }
   };
 
-  /*
-   * Nama item terpilih digunakan sebagai alternatif pencocokan.
-   * Hal ini berguna apabila respons /material tidak menyertakan ID,
-   * tetapi menyertakan nama proyek, pekerjaan, dan subpekerjaan.
-   */
-  const selectedProjectName = useMemo(() => {
-    return proyek.find(
-      item =>
-        String(item.id_proyek) === appliedFilter.id_proyek,
-    )?.nama_proyek;
-  }, [proyek, appliedFilter.id_proyek]);
-
-  const selectedPekerjaanName = useMemo(() => {
-    return pekerjaan.find(
-      item =>
-        String(item.id_pekerjaan) ===
-        appliedFilter.id_pekerjaan,
-    )?.nama_pekerjaan;
-  }, [pekerjaan, appliedFilter.id_pekerjaan]);
-
-  const selectedSubName = useMemo(() => {
-    return sub.find(
-      item => String(item.id_sub) === appliedFilter.id_sub,
-    )?.nama_sub;
-  }, [sub, appliedFilter.id_sub]);
-
-  /*
-   * Fungsi pencocokan berdasarkan ID.
-   * Jika ID tidak tersedia pada respons, pencocokan memakai nama.
-   */
-  const matchFilter = (
-    rowId: unknown,
-    rowName: unknown,
-    selectedId: string,
-    selectedName?: string,
-  ) => {
-    if (!selectedId) {
-      return true;
-    }
-
-    if (
-      rowId !== undefined &&
-      rowId !== null &&
-      String(rowId) === selectedId
-    ) {
-      return true;
-    }
-
-    if (selectedName) {
-      return (
-        normalizeText(rowName) === normalizeText(selectedName)
-      );
-    }
-
-    return false;
-  };
-
-  /*
-   * Filter data material.
-   */
   const filteredRows = useMemo(() => {
     return allRows.filter(row => {
-      const cocokProyek = matchFilter(
+      const cocokProyek = matchesOption(
         row.id_proyek,
         row.nama_proyek,
         appliedFilter.id_proyek,
-        selectedProjectName,
       );
 
-      const cocokPekerjaan = matchFilter(
+      const cocokPekerjaan = matchesOption(
         row.id_pekerjaan,
         row.nama_pekerjaan,
         appliedFilter.id_pekerjaan,
-        selectedPekerjaanName,
       );
 
-      const cocokSub = matchFilter(
+      const cocokSub = matchesOption(
         row.id_sub,
         row.nama_sub,
         appliedFilter.id_sub,
-        selectedSubName,
       );
 
       const tanggal = String(
@@ -341,17 +342,8 @@ export default function MaterialPage() {
         cocokTanggalSelesai
       );
     });
-  }, [
-    allRows,
-    appliedFilter,
-    selectedProjectName,
-    selectedPekerjaanName,
-    selectedSubName,
-  ]);
+  }, [allRows, appliedFilter]);
 
-  /*
-   * Data grafik berdasarkan hasil filter.
-   */
   const chartData = useMemo(() => {
     const map = new Map<
       string,
@@ -377,7 +369,9 @@ export default function MaterialPage() {
 
       const current = map.get(tanggal);
 
-      if (!current) return;
+      if (!current) {
+        return;
+      }
 
       const biaya = Number(row.biaya_pakai ?? 0);
       const spesifikasi = normalizeText(row.spesifikasi);
@@ -396,6 +390,34 @@ export default function MaterialPage() {
     );
   }, [filteredRows]);
 
+  const totalMaterial = useMemo(
+    () =>
+      filteredRows.reduce((total, row) => {
+        if (
+          normalizeText(row.spesifikasi) !== 'material'
+        ) {
+          return total;
+        }
+
+        return total + Number(row.biaya_pakai ?? 0);
+      }, 0),
+    [filteredRows],
+  );
+
+  const totalTenaga = useMemo(
+    () =>
+      filteredRows.reduce((total, row) => {
+        if (
+          normalizeText(row.spesifikasi) !== 'tenaga'
+        ) {
+          return total;
+        }
+
+        return total + Number(row.biaya_pakai ?? 0);
+      }, 0),
+    [filteredRows],
+  );
+
   const handleApplyFilter = () => {
     if (
       filter.start &&
@@ -412,10 +434,8 @@ export default function MaterialPage() {
   };
 
   const handleResetFilter = () => {
-    setFilter(emptyFilter);
-    setAppliedFilter(emptyFilter);
-    setPekerjaan([]);
-    setSub([]);
+    setFilter({ ...emptyFilter });
+    setAppliedFilter({ ...emptyFilter });
   };
 
   return (
@@ -431,7 +451,6 @@ export default function MaterialPage() {
         Rekap penggunaan material dan tenaga kerja
       </p>
 
-      {/* FILTER */}
       <div className="card" style={filterCardStyle}>
         <select
           value={filter.id_proyek}
@@ -440,18 +459,14 @@ export default function MaterialPage() {
           }
           style={{
             ...selectStyle,
-            width: 170,
-            minWidth: 170,
+            width: 190,
           }}
         >
           <option value="">Semua Proyek</option>
 
-          {proyek.map(item => (
-            <option
-              key={item.id_proyek}
-              value={item.id_proyek}
-            >
-              {item.nama_proyek}
+          {projectOptions.map(item => (
+            <option key={item.value} value={item.value}>
+              {item.label}
             </option>
           ))}
         </select>
@@ -461,31 +476,18 @@ export default function MaterialPage() {
           onChange={event =>
             handlePekerjaanChange(event.target.value)
           }
-          disabled={
-            !filter.id_proyek || loadingPekerjaan
-          }
+          disabled={!filter.id_proyek}
           style={{
             ...selectStyle,
-            width: 180,
-            minWidth: 180,
-            opacity:
-              !filter.id_proyek || loadingPekerjaan
-                ? 0.6
-                : 1,
+            width: 190,
+            opacity: filter.id_proyek ? 1 : 0.6,
           }}
         >
-          <option value="">
-            {loadingPekerjaan
-              ? 'Memuat pekerjaan...'
-              : 'Semua Pekerjaan'}
-          </option>
+          <option value="">Semua Pekerjaan</option>
 
-          {pekerjaan.map(item => (
-            <option
-              key={item.id_pekerjaan}
-              value={item.id_pekerjaan}
-            >
-              {item.nama_pekerjaan}
+          {pekerjaanOptions.map(item => (
+            <option key={item.value} value={item.value}>
+              {item.label}
             </option>
           ))}
         </select>
@@ -498,28 +500,18 @@ export default function MaterialPage() {
               id_sub: event.target.value,
             }))
           }
-          disabled={
-            !filter.id_pekerjaan || loadingSub
-          }
+          disabled={!filter.id_pekerjaan}
           style={{
             ...selectStyle,
-            width: 180,
-            minWidth: 180,
-            opacity:
-              !filter.id_pekerjaan || loadingSub
-                ? 0.6
-                : 1,
+            width: 200,
+            opacity: filter.id_pekerjaan ? 1 : 0.6,
           }}
         >
-          <option value="">
-            {loadingSub
-              ? 'Memuat sub...'
-              : 'Semua Subpekerjaan'}
-          </option>
+          <option value="">Semua Subpekerjaan</option>
 
-          {sub.map(item => (
-            <option key={item.id_sub} value={item.id_sub}>
-              {item.nama_sub}
+          {subOptions.map(item => (
+            <option key={item.value} value={item.value}>
+              {item.label}
             </option>
           ))}
         </select>
@@ -556,6 +548,7 @@ export default function MaterialPage() {
           className="btn btn-primary"
           onClick={handleApplyFilter}
           disabled={loading}
+          style={buttonStyle}
         >
           Terapkan
         </button>
@@ -571,25 +564,40 @@ export default function MaterialPage() {
         </button>
       </div>
 
-      {error && (
-        <div style={errorStyle}>
-          {error}
+      {error && <div style={errorStyle}>{error}</div>}
+
+      <div style={summaryGridStyle}>
+        <div className="card" style={summaryCardStyle}>
+          <span style={summaryLabelStyle}>
+            Data ditampilkan
+          </span>
+          <strong style={summaryValueStyle}>
+            {filteredRows.length}
+          </strong>
+          <small style={summaryNoteStyle}>
+            dari {allRows.length} data
+          </small>
         </div>
-      )}
 
-      <p
-        style={{
-          color: '#6b7280',
-          fontSize: 13,
-          marginTop: 12,
-          marginBottom: 0,
-        }}
-      >
-        Menampilkan {filteredRows.length} dari{' '}
-        {allRows.length} data
-      </p>
+        <div className="card" style={summaryCardStyle}>
+          <span style={summaryLabelStyle}>
+            Total material
+          </span>
+          <strong style={summaryValueStyle}>
+            {formatRupiah(totalMaterial)}
+          </strong>
+        </div>
 
-      {/* GRAFIK */}
+        <div className="card" style={summaryCardStyle}>
+          <span style={summaryLabelStyle}>
+            Total tenaga
+          </span>
+          <strong style={summaryValueStyle}>
+            {formatRupiah(totalTenaga)}
+          </strong>
+        </div>
+      </div>
+
       <div
         className="card"
         style={{
@@ -607,7 +615,7 @@ export default function MaterialPage() {
             Tidak ada data grafik berdasarkan filter
           </p>
         ) : (
-          <div style={{ height: 320 }}>
+          <div style={{ height: 340 }}>
             <ResponsiveContainer
               width="100%"
               height="100%"
@@ -617,8 +625,8 @@ export default function MaterialPage() {
                 margin={{
                   top: 20,
                   right: 20,
-                  left: 20,
-                  bottom: 20,
+                  left: 30,
+                  bottom: 40,
                 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
@@ -626,9 +634,14 @@ export default function MaterialPage() {
                 <XAxis
                   dataKey="tanggal"
                   tickFormatter={formatTanggal}
+                  minTickGap={24}
+                  angle={-25}
+                  textAnchor="end"
+                  height={70}
                 />
 
                 <YAxis
+                  width={95}
                   tickFormatter={value =>
                     Number(value).toLocaleString('id-ID')
                   }
@@ -664,7 +677,6 @@ export default function MaterialPage() {
         )}
       </div>
 
-      {/* TABEL */}
       <div
         className="card"
         style={{
@@ -761,9 +773,7 @@ export default function MaterialPage() {
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {formatRupiah(
-                          row.biaya_pakai,
-                        )}
+                        {formatRupiah(row.biaya_pakai)}
                       </td>
                     </tr>
                   );
@@ -776,8 +786,6 @@ export default function MaterialPage() {
     </main>
   );
 }
-
-/* ================= STYLE ================= */
 
 const tableStyle: React.CSSProperties = {
   width: '100%',
@@ -809,16 +817,17 @@ const emptyStyle: React.CSSProperties = {
 };
 
 const selectStyle: React.CSSProperties = {
-  padding: '8px 10px',
+  minWidth: 170,
+  padding: '10px 12px',
   borderRadius: 8,
   border: '1px solid #e5e7eb',
   backgroundColor: '#ffffff',
 };
 
 const dateStyle: React.CSSProperties = {
-  width: 140,
-  minWidth: 140,
-  padding: '8px 10px',
+  width: 150,
+  minWidth: 150,
+  padding: '10px 12px',
   borderRadius: 8,
   border: '1px solid #e5e7eb',
 };
@@ -827,19 +836,26 @@ const filterCardStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 10,
-  flexWrap: 'nowrap',
-  overflowX: 'auto',
+  flexWrap: 'wrap',
   padding: 14,
   borderRadius: 12,
+};
+
+const buttonStyle: React.CSSProperties = {
+  padding: '10px 18px',
+  borderRadius: 8,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
 };
 
 const resetButtonStyle: React.CSSProperties = {
   backgroundColor: '#ffffff',
   color: '#374151',
   border: '1px solid #d1d5db',
-  padding: '8px 16px',
+  padding: '10px 18px',
   borderRadius: 8,
   cursor: 'pointer',
+  whiteSpace: 'nowrap',
 };
 
 const errorStyle: React.CSSProperties = {
@@ -848,4 +864,34 @@ const errorStyle: React.CSSProperties = {
   borderRadius: 8,
   backgroundColor: '#fee2e2',
   color: '#b91c1c',
+};
+
+const summaryGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns:
+    'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: 12,
+  marginTop: 16,
+};
+
+const summaryCardStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  padding: 16,
+};
+
+const summaryLabelStyle: React.CSSProperties = {
+  color: '#6b7280',
+  fontSize: 13,
+};
+
+const summaryValueStyle: React.CSSProperties = {
+  color: '#1f3f66',
+  fontSize: 20,
+};
+
+const summaryNoteStyle: React.CSSProperties = {
+  color: '#9ca3af',
+  fontSize: 12,
 };
